@@ -67,8 +67,8 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // IO_USERNAME (mqttUser[]) and IO_KEY (mqtt_Pass) and fill them in below.
 const char* broker = "io.adafruit.com";
 const uint16_t port = 1883;
-const char mqttUser[] = "<your IO_USERNAME>";
-const char mqttPass[] = "<your IO_KEY>";
+const char mqttUser[] = "<your Adafruit IO_USERNAME>";
+const char mqttPass[] = "<your Adafruit IO_KEY>";
 const char mqttFeed1[] = "rssi";
 const char mqttFeed2[] = "speed";
 
@@ -158,21 +158,33 @@ boolean areWeAwakeYet() {
 // to connect the SIM7000 to the Adafuit IO MQTT broker.
 boolean bringMQTTOnline(void) {
   char buf[BUFSIZE1];
+  char nullDelimiter[1] = "";
+  char nlDelimiter[2] = "\n";
+  char result[6] = "";
 
-  for (int i = 10; i > 0; i--) {
-    Serial1.println("AT");
-  }
+  //Serial1.println("AT+CFUN=1,1");
+  while (!areWeAwakeYet()) {};
+
+  delay(5000);
+
   Serial1.println("ATE1");
-  Serial1.readStringUntil('\n'); 
+  //printResponse(2000);
+
+  strcpy(result, checkResponse(1, nullDelimiter, true));
+  if (strstr(result, "OK") == NULL) {
+    Serial.println("SIM7000 didn't respond with \"OK\" to \"ATE1\"");
+    return false;
+  }
+  else {
+    Serial.println("SIM7000 responded to \"ATE1\" with \"OK\"");
+  }
 
   // Turn on GPS power
   Serial.println("Enabling GPS power...");
 
   Serial1.println("AT+SGPIO=0,4,1,1");
-  char delimiters[2] = "\n";
 
-  char result[6] = "";
-  strcpy(result, checkResponse(1, delimiters, true));
+  strcpy(result, checkResponse(1, nlDelimiter, true));
   if (strstr(result, "OK") != NULL) {Serial.println("GPS power supply enabled!"); }
 
   delay(2000);
@@ -330,17 +342,22 @@ void printResponse(int delay) {
 }
 
 void setup() {
-  // Power up the SIM7000G
+  // Power cycle the SIM7000G
+  // Note that there is an inverter between the ESP32 output and the SIM7000
+  // PWRKEY pin.
   pinMode(PWR_PIN, OUTPUT);
   digitalWrite(PWR_PIN, HIGH);
-  delay(300);
-  // digitalWrite(PWR_PIN, LOW);
+  delay(2000);
+  digitalWrite(PWR_PIN, LOW);
+  delay(1200);
+  digitalWrite(PWR_PIN, HIGH);
+  // According to the datasheet the SIM7000 takes 4.5 seconds to become active after powerup
+  delay(5000);
 
   Serial.begin(115200);
   Serial1.begin(115200, SERIAL_8N1, PIN_RX, PIN_TX);
 
   // Wait for the SIM7000 to wake up
-  delay(2000);
   if (areWeAwakeYet()) {
     Serial.println("SIM7000 woke up!  Yay!");
   }
@@ -382,8 +399,6 @@ void loop() {
 
     if (atoi(result) != 1) {
       Serial.println("MQTT connection lost, restarting modem!");
-      Serial1.println("AT+CFUN=1,1");
-      while (!areWeAwakeYet()) {};
       bringMQTTOnline();
       t_zero = millis();
       t_one = millis();
