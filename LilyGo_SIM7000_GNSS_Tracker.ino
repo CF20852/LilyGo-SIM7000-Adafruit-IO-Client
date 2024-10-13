@@ -25,7 +25,7 @@ This program is currently set up to work with a Hologram SIM.  It seems to work 
 T-Mobile and AT&T networks in the USA, or at least in Prescott and Sedona, Arizona.
 
 This version of the program is set up to report the cellular network received signal strength
-indicator (RSSI) on the Adafruit IO feed.   
+indicator (RSSI) and GPS speed on the Adafruit IO feeds.   
 
 Copyright 2024 Robert F. Fleming, III
 
@@ -69,6 +69,8 @@ const char* broker = "io.adafruit.com";
 const uint16_t port = 1883;
 const char mqttUser[] = "<your IO_USERNAME>";
 const char mqttPass[] = "<your IO_KEY>";
+const char mqttFeed1[] = "rssi";
+const char mqttFeed2[] = "speed";
 
 // The TinyGSM library is only used for the GPS functions, which I'm too
 // lazy to try to reinvent right now.
@@ -285,19 +287,35 @@ void updateParameter() {
   snprintf(buf1, BUFSIZE1, "RSSI = %d, lat = %2.6f, lon = %3.6f, alt = %4.1f", rssi, latitude, longitude, altitude);
   Serial.println(buf1);
 
-  // Prepare MQTT publish content
+  // Prepare MQTT publish content for RSSI
   // Refer to the SIMCom SIM7000 MQTT appnote to see how to do this.
   // First you issue the command, then the SIM7000 prompts for the data to publish.
   char buf2[BUFSIZE2] = "";
   int size2 = snprintf(buf2, BUFSIZE2, "%d,%2.6f,%3.6f,%4.1f", rssi, latitude, longitude, altitude);
   strncpy(buf1, "", sizeof(buf1));
-  snprintf(buf1, BUFSIZE1, "AT+SMPUB=\"cf20855/feeds/update/csv\",\"%d\",1,1", size2);
+  snprintf(buf1, BUFSIZE1, "AT+SMPUB=\"cf20855/feeds/%s/csv\",\"%d\",1,1", mqttFeed1, size2);
   
   // Send MQTT publish
   Serial1.println(buf1);
   printResponse(1000);
   Serial1.println(buf2);
+  printResponse(2000);
+
+  delay(1000);
+
+  // Prepare MQTT publish content for speed
+  // Refer to the SIMCom SIM7000 MQTT appnote to see how to do this.
+  // First you issue the command, then the SIM7000 prompts for the data to publish.
+  strcpy(buf2, "");
+  size2 = snprintf(buf2, BUFSIZE2, "%3.2f,%2.6f,%3.6f,%4.1f", speed, latitude, longitude, altitude);
+  strncpy(buf1, "", sizeof(buf1));
+  snprintf(buf1, BUFSIZE1, "AT+SMPUB=\"cf20855/feeds/%s/csv\",\"%d\",1,1", mqttFeed2, size2);
+  
+  // Send MQTT publish
+  Serial1.println(buf1);
   printResponse(1000);
+  Serial1.println(buf2);
+  printResponse(2000);
   
 }
 
