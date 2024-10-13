@@ -30,5 +30,5 @@ This program is currently set up to work with a Hologram SIM.  It seems to work 
 T-Mobile and AT&T networks in the USA, or at least in Prescott and Sedona, Arizona.
 
 This version of the program is set up to report the cellular network received signal strength
-indicator (RSSI) and the GNSS (GPS + GLONASS + Beidou + Galileo) on the Adafruit IO feeds.
+indicator (RSSI) and the GNSS (GPS + GLONASS + Beidou + Galileo) speed on the Adafruit IO feeds.
 You can easily change the program to report other parameters.
