@@ -4,8 +4,8 @@ to demonstrate the use of SIM7000 MQTT commands to send
 data to Adafruit IO.  You can set up a free Adafruit IO account to test it.
 Once you have an Adafruit IO account, you'll need to insert your IO_USERNAME
 and your IO_KEY in the MQTT parameters in the sketch.  On your Adafruit IO account, you'll
-need to set up a feed called "update", or change the feed name in line 294 of
-the sketch.
+need to set up feeds called "rssi" and "speed", or change the feed names in lines
+72 and 73 of the sketch.
 
 The SIM7000 MQTT commands are documented in the following SIMCom application note:
 https://simcom.ee/documents/SIM7000x/SIM7000%20Series_MQTT_Application%20Note_V1.00.pdf
