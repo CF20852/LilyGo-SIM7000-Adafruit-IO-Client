@@ -19,6 +19,8 @@ reading this program.
 For the full set of SIM7000 documentation see:
 https://simcom.ee/documents/?dir=SIM7000x
 
+NB:  The SIM7000x documents made publicly available by SIMCom may not be up-to-date.
+
 I used the TinyGSM library code as a starting point for this program.  But the only functions
 from that library that this program uses are the GPS-related functions.  I used a
 trial-and-error process to figure out what AT commands are necessary to bring the SIM7000
