@@ -1,25 +1,19 @@
 # LilyGo-SIM7000-Adafruit-IO-Client
-This is an Arduino sketch designed for the LilyGo TTGO SIM7000
-to demonstrate the use of SIM7000 MQTT commands to send
+This is a program to demonstrate the use of SIM7000 MQTT commands to send
 data to Adafruit IO.  You can set up a free Adafruit IO account to test it.
-Once you have an Adafruit IO account, you'll need to insert your IO_USERNAME
-and your IO_KEY in the MQTT parameters in the sketch.  On your Adafruit IO account, you'll
-need to set up feeds called "rssi" and "speed", or change the feed names in lines
-72 and 73 of the sketch.
 
 The SIM7000 MQTT commands are documented in the following SIMCom application note:
-https://simcom.ee/documents/SIM7000x/SIM7000%20Series_MQTT_Application%20Note_V1.00.pdf
+https://github.com/Xinyuan-LilyGO/LilyGO-T-SIM7000G/blob/098ee1f9f1405eb8e8e250e660815a50cbd76a51/docs/SIM7000/SIM7000%20Series_MQTT(S)_Application%20Note_V1.02.pdf
 
 They are not documented in the SIM7000 AT command manual at:
-https://simcom.ee/documents/SIM7000x/SIM7000%20Series_AT%20Command%20Manual_V1.04.pdf
+https://github.com/Xinyuan-LilyGO/LilyGO-T-SIM7000G/blob/098ee1f9f1405eb8e8e250e660815a50cbd76a51/docs/SIM7000/SIM7000%20Series_AT%20Command%20Manual_V1.06.pdf
 
 I strongly recommend you have a copy of the above two documents close at hand when
 reading this program.
 
 For the full set of SIM7000 documentation see:
-https://simcom.ee/documents/?dir=SIM7000x
+https://github.com/Xinyuan-LilyGO/LilyGO-T-SIM7000G/tree/098ee1f9f1405eb8e8e250e660815a50cbd76a51/docs/SIM7000
 
-NB:  The SIM7000x documents made publicly available by SIMCom may not be up-to-date.
 
 I used the TinyGSM library code as a starting point for this program.  But the only functions
 from that library that this program uses are the GPS-related functions.  I used a
@@ -31,6 +25,6 @@ and publish data to the broker.
 This program is currently set up to work with a Hologram SIM.  It seems to work on the
 T-Mobile and AT&T networks in the USA, or at least in Prescott and Sedona, Arizona.
 
-This version of the program is set up to report the cellular network received signal strength
-indicator (RSSI) and the GNSS (GPS + GLONASS + Beidou + Galileo) speed on the Adafruit IO feeds.
+This version of the program is set up to report the cellular network reference signal signal-to
+noise ratio (RSSNR) and GPS speed on the Adafruit IO feeds.  
 You can easily change the program to report other parameters.
