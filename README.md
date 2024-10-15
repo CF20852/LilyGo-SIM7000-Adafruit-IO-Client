@@ -26,5 +26,4 @@ This program is currently set up to work with a Hologram SIM.  It seems to work 
 T-Mobile and AT&T networks in the USA, or at least in Prescott and Sedona, Arizona.
 
 This version of the program is set up to report the cellular network reference signal signal-to
-noise ratio (RSSNR) and GPS speed on the Adafruit IO feeds.  
-You can easily change the program to report other parameters.
+noise ratio (RSSNR) and GPS speed on the Adafruit IO feeds.  You can easily change the program to report other parameters.
