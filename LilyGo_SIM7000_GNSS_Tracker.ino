@@ -247,8 +247,7 @@ bool bringMQTTOnline(void) {
   Serial1.println("AT+CNMP=51");
   printResponse(1000);
 
-  // AT+CMNB=1  set preferred connection type to CAT-M1, which supports tower handoff,
-  // unlike NB-IoT.  NB-IoT is better suited to stationary devices.
+  // AT+CMNB=1  set preferred connection type to CAT-M1.
   Serial1.println("AT+CMNB=1");
   printResponse(2000);
 
