@@ -52,12 +52,9 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // set up a 45-second watchdog timer to restart if error or lost connection
 #define WDT_TIMEOUT 45000
 
-#define CONFIG_FREERTOS_NUMBER_OF_CORES 2
-esp_task_wdt_config_t twdt_config = {
-  .timeout_ms = WDT_TIMEOUT,
-  .idle_core_mask = (1 << CONFIG_FREERTOS_NUMBER_OF_CORES) - 1,  // Bitmask of all cores
-  .trigger_panic = true,
-};
+#define LEDPIN 12
+
+unsigned long restartESP;
 
 // Defined the ESP32 pins that are connected to the SIM7000
 #define PWR_PIN 4
@@ -71,6 +68,17 @@ esp_task_wdt_config_t twdt_config = {
 #define BUFSIZE2 35
 #define BUFSIZE3 121
 
+// Constants for battery voltage calculation
+#define VBATT_MIN 1945.0f  // ADC value for 3.6V
+#define VBATT_RANGE 616.7f // ADC value range for 3.6V to 4.2V
+#define VBATT_MIN_VOLTAGE 3.6f
+
+// Timeout constants
+#define SERIAL_TIMEOUT 2000
+#define MQTT_PUBLISH_INTERVAL 29000
+#define CONNECTION_CHECK_INTERVAL 23000
+#define RECONNECT_TIMEOUT 60000
+
 // MQTT details
 // Sign up for a free Adafruit IO account.
 // While signed into your account, you can click on the gold circle with the
@@ -78,7 +86,7 @@ esp_task_wdt_config_t twdt_config = {
 // IO_USERNAME (mqttUser[]) and IO_KEY (mqtt_Pass) and fill them in below.
 // Also, you can change the mqttFeed names if you want.
 const char* broker = "io.adafruit.com";
-
+//const char* broker = "demo.thingsboard.io";
 const uint16_t port = 1883;
 const char mqttUser[] = "<your Adafruit IO IO_USERNAME>";
 const char mqttPass[] = "<your Adafruit IO IO_KEY>";
@@ -108,8 +116,8 @@ bool waitForOKorError(unsigned long waitTime) {
     }
     // Serial.println( "String received in waitForOKOrError = " + str + " ," + String(str.length()) );
     // Serial.println("Response wait time = " + String(millis() - t_0));
-    if (str == "OK\r") { return true; }
-    if (str == "ERROR\r") { return false; }
+    if (str.indexOf("OK") != -1) { return true; }
+    if (str.indexOf("ERROR") != -1) { return false; }
   }
   return false;
 }
@@ -190,6 +198,7 @@ bool areWeAwakeYet() {
 
   // Give it a minute to wake up
   while (millis() < t_0 + 60000) {
+    Serial1.flush();
     Serial1.println("AT");
     while (Serial1.available() == 0) {}  //wait for data available
     String response = Serial1.readString();
@@ -211,6 +220,7 @@ bool areWeAwakeYet() {
 bool bringMQTTOnline(void) {
   char buf[BUFSIZE1];
 
+  Serial1.flush();
   Serial1.println("ATE1");
 
   if (!waitForOKorError(2000)) {
@@ -223,12 +233,12 @@ bool bringMQTTOnline(void) {
   // Turn on GPS power
   Serial.println("Enabling GPS power...");
 
+  Serial1.flush();
   Serial1.println("AT+SGPIO=0,4,1,1");
 
   if (waitForOKorError(2000)) {
     Serial.println("GPS power supply enabled!");
-  }
-  else {
+  } else {
     Serial.println("Problem enabling GPS power!");
   }
 
@@ -240,26 +250,32 @@ bool bringMQTTOnline(void) {
   }
 
   // AT+SAPBR=3,1,"APN","hologram"  Use the Hologram SIM for the APN
+  Serial1.flush();
   Serial1.println("AT+SAPBR=3,1,\"APN\",\"hologram\"");
   printResponse(1000);
 
   // AT+CNMP=38  set preferred connection type to LTE
+  Serial1.flush();
   Serial1.println("AT+CNMP=51");
   printResponse(1000);
 
   // AT+CMNB=1  set preferred connection type to CAT-M1.
+  Serial1.flush();
   Serial1.println("AT+CMNB=1");
   printResponse(2000);
 
   // AT+CIPMUX=1
+  Serial1.flush();
   Serial1.println("AT+CIPMUX=0");  // start a single IP connection
   printResponse(1000);
 
   // AT+CSTT="hologram","",""
+  Serial1.flush();
   Serial1.println("AT+CSTT=\"hologram\",\"\",\"\"");
   printResponse(1000);
 
   // AT+CNACT=1,"hologram"  Make the network active using the supplied APN (I think)
+  Serial1.flush();
   Serial1.println("AT+CNACT=1,\"hologram\"");
   printResponse(1000);
 
@@ -267,33 +283,40 @@ bool bringMQTTOnline(void) {
   // a response like +COPS: 0,0,"AT&T Hologram",7 or +COPS: 0,0,"T-Mobile Hologram",7 seems good
   // the '7' in the response means User-specified LTE M1 A GB access technology
   // a '9' in the response would mean User-specified LTE NB S1 access technology
+  Serial1.flush();
   Serial1.println("AT+COPS?");
   printResponse(1000);
 
   // AT+CGNAPN  query CAT-M1 or NB-IoT network after the successful registration of APN
   // Basically, if we get a response like +CGNAPN: 1,"hologram" back, we're connected
+  Serial1.flush();
   Serial1.println("AT+CGNAPN");
   printResponse(1000);
 
   // AT+CGNSHOR=10  set the desired GNSS accuracy to 10 meters
+  Serial1.flush();
   Serial1.println("AT+CGNSHOR=10");
   printResponse(1000);
 
   // AT+SMCONF="URL","io.adafruit.com"
+  Serial1.flush();
   Serial1.println("AT+SMCONF=\"URL\",\"io.adafruit.com\"");
   printResponse(1000);
 
   // AT+SMCONF="USERNAME","<your Adafruit IO IO_USERNAME>"
   sprintf(buf, "AT+SMCONF=\"USERNAME\",\"%s\"", mqttUser);
+  Serial1.flush();
   Serial1.println(buf);
   printResponse(1000);
 
   // AT+SMCONF="PASSWORD","<your Adafruit IO IO_KEY>"
   sprintf(buf, "AT+SMCONF=\"PASSWORD\",\"%s\"", mqttPass);
+  Serial1.flush();
   Serial1.println(buf);
   printResponse(1000);
 
   // AT+SMCONN
+  Serial1.flush();
   Serial1.println("AT+SMCONN");
   if (!waitForOKorError(10000)) {
     Serial.println("SIM7000 didn't connect to MQTT broker :-(");
@@ -304,11 +327,27 @@ bool bringMQTTOnline(void) {
   return true;
 }
 
+// this function reads the battery voltage from ESP32 IO35 and converts to volts
+// using calibration constants determined for my board using a voltmeter and
+// variable voltage power supply
+float readBatteryVoltage() {
+  int vBatt = 0;
+  const int SAMPLES = 100;
+  
+  for (int i = 0; i < SAMPLES; i++) {
+    vBatt += analogRead(35);
+    delay(1);
+  }
+  
+  vBatt /= SAMPLES;
+  return ((float)vBatt - VBATT_MIN) / VBATT_RANGE + VBATT_MIN_VOLTAGE;
+}
+
 // This function generates and publishes CSV feed messages to Adafruit IO
 // containing various parameters and the locations at which the parameters were measured.
 // The Adafruit IO documentation on how to send data with location can be found
 // at https://io.adafruit.com/api/docs/mqtt.html#mqtt-data-format .
-void updateParameter() {
+bool updateParameter() {
   // Variables to hold GPS data
   float latitude = 0.0;
   float longitude = 0.0;
@@ -328,6 +367,7 @@ void updateParameter() {
   }
 
   // Get RSSNR
+  Serial1.flush();
   Serial1.println("AT+CPSI?");
   char delimiters[2] = ",";
 
@@ -347,11 +387,13 @@ void updateParameter() {
   snprintf(buf1, BUFSIZE1, "AT+SMPUB=\"cf20855/feeds/%s/csv\",\"%d\",1,1", mqttFeed1, size2);
 
   // Send MQTT publish
+  Serial1.flush();
   Serial1.println(buf1);
   Serial.println(buf1);
   if (!waitForPromptOrError(5000)) {
     Serial.println("Error publishing first line of " + String(mqttFeed1));
   } else {
+    Serial1.flush();
     Serial1.println(buf2);
     Serial.println(buf2);
   }
@@ -370,11 +412,13 @@ void updateParameter() {
   snprintf(buf1, BUFSIZE1, "AT+SMPUB=\"cf20855/feeds/%s/csv\",\"%d\",1,1", mqttFeed2, size2);
 
   // Send MQTT publish
+  Serial1.flush();
   Serial1.println(buf1);
   Serial.println(buf1);
   if (!waitForPromptOrError(5000)) {
     Serial.println("Error publishing first line of  " + String(mqttFeed2));
   } else {
+    Serial1.flush();
     Serial1.println(buf2);
     Serial.println(buf2);
   }
@@ -386,24 +430,14 @@ void updateParameter() {
 
   if (errorCount > 2) {
     Serial.println("Errors detected when publishing data, waiting for watchdog timeout");
-    while (1) {}
+    //while (1) {}
   }
 
   delay(1000);
 
   // Prepare MQTT publish content for VBatt
   // Average vBatt over 100 readings taken 1 ms apart
-  // 3.6 VDC ~ 1945; 4.2 VDC ~ 2315.
-  int vBatt = 0;
-  int i;
-  
-  for (i = 0; i < 100; i++) {
-    vBatt += analogRead(35);
-    delay(1);
-  }
-
-  vBatt = vBatt / i;
-  float vBattF = ((float)vBatt - 1945.0) / 616.7 + 3.6;
+  float vBattF = readBatteryVoltage();
 
   strcpy(buf2, "");
   size2 = snprintf(buf2, BUFSIZE2, "%1.2f,%2.6f,%3.6f,%4.1f", vBattF, latitude, longitude, altitude);
@@ -411,11 +445,13 @@ void updateParameter() {
   snprintf(buf1, BUFSIZE1, "AT+SMPUB=\"cf20855/feeds/%s/csv\",\"%d\",1,1", mqttFeed3, size2);
 
   // Send MQTT publish
+  Serial1.flush();
   Serial1.println(buf1);
   Serial.println(buf1);
   if (!waitForPromptOrError(5000)) {
     Serial.println("Error publishing first line of  " + String(mqttFeed3));
   } else {
+    Serial1.flush();
     Serial1.println(buf2);
     Serial.println(buf2);
   }
@@ -427,10 +463,11 @@ void updateParameter() {
 
   if (errorCount > 2) {
     Serial.println("Errors detected when publishing data, waiting for watchdog timeout");
-    while (1) {}
+    return false;
   }
 
   Serial.println();
+  return true;
 }
 
 // This function is useful for looking at whatever serial data comes out of the SIM7000.
@@ -443,10 +480,56 @@ void printResponse(int delay) {
   }
 }
 
+bool attemptReconnect(unsigned long timeout_ms) {
+  unsigned long t_start = millis();
+
+  Serial.println("Reactivating network connection...");
+
+  while (millis() < t_start + timeout_ms) {
+    // Attempt to re-activate the network
+    // Re-activate the cellular connection with the APN
+    Serial1.flush();
+    Serial1.println("AT+CNACT=1,\"hologram\"");
+    if (!waitForOKorError(5000)) {
+      Serial.println("Failed to activate network connection.");
+      continue;
+    }
+
+    // Optionally, check network status
+    Serial1.println("AT+COPS?");
+    printResponse(2000);  // Just for debugging purposes
+
+    // Now attempt to reconnect to the MQTT broker
+    Serial.println("Reconnecting to MQTT broker...");
+    Serial1.flush();
+    Serial1.println("AT+SMCONN");
+
+    if (waitForOKorError(10000)) {
+      return true;
+    }
+  }
+
+  // If we reach here, timeout has occurred
+  Serial.println("Reconnect attempt timed out, restarting board...");
+  restartBoard();  // Call to the existing restart function
+
+  return false;  // to make the compiler happy that there's a return value from a bool function
+}
+
+void restartBoard(void) {
+  Serial.println("Attempting to restart SIM7000 and ESP32");
+  pinMode(PWR_PIN, OUTPUT);
+  digitalWrite(PWR_PIN, LOW);
+  delay(1500);
+  digitalWrite(PWR_PIN, HIGH);
+  // According to the datasheet the SIM7000 takes 6.9 seconds to become inactive after powerdow
+  delay(7500);
+  ESP.restart();
+}
+
 void setup() {
-  esp_task_wdt_deinit();            //wdt is enabled by default, so we need to deinit it first
-  esp_task_wdt_init(&twdt_config);  //enable panic so ESP32 restarts
-  esp_task_wdt_add(NULL);           //add current thread to WDT watch
+  pinMode(LEDPIN, OUTPUT);
+  digitalWrite(LEDPIN, LOW);
 
   Serial.begin(115200);
   Serial1.begin(115200, SERIAL_8N1, PIN_RX, PIN_TX);
@@ -476,12 +559,14 @@ void setup() {
   bringMQTTOnline();
 
   // +CPSI? is a good command for looking at network connection status
+  Serial1.flush();
   Serial1.println("AT+CPSI?");
   printResponse(2000);
 
   t_zero = millis();
   t_one = millis();
-  esp_task_wdt_reset();
+
+  digitalWrite(LEDPIN, HIGH);
 }
 
 void loop() {
@@ -496,9 +581,10 @@ void loop() {
   // }
 
   // Check the connection status every 23 seconds
-  if (millis() > t_zero + 23000) {
+  if (millis() > t_zero + CONNECTION_CHECK_INTERVAL) {
     t_zero = millis();
     // Check the MQTT connection status
+    Serial1.flush();
     Serial1.println("AT+SMSTATE?");
     char delimiters[3] = ":\n";
 
@@ -509,16 +595,24 @@ void loop() {
     Serial.println(result);
 
     if ((strstr(result, "0") != NULL)) {
-      Serial.println("MQTT connection lost, letting watchdog timer timeout!");
-      while (1) {}
+      Serial.println("MQTT connection lost, attempting to recconnect, if that fails, restarting!");
+      if (!attemptReconnect(RECONNECT_TIMEOUT)) {
+        restartBoard();
+      }
     }
   }
 
   // Send a report every 29 seconds (I like prime numbers)
-  if (millis() > t_one + 29000) {
+  if (millis() > t_one + MQTT_PUBLISH_INTERVAL) {
     t_one = millis();
-    updateParameter();
-    esp_task_wdt_reset();
-    Serial.println(String(analogRead(35)));
+    digitalWrite(LEDPIN, LOW);
+    if (!updateParameter()) {
+      if (!attemptReconnect(RECONNECT_TIMEOUT)) {
+        restartBoard();
+      }
+    }
+
+    //Serial.println(String(analogRead(35)));  // battery voltage
+    digitalWrite(LEDPIN, HIGH);
   }
 }
