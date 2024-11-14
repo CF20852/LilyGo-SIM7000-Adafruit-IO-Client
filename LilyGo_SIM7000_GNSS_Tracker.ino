@@ -49,8 +49,11 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <ArduinoTrace.h>
 #include <esp_task_wdt.h>
 
+// define a constant for converting km per hr to miles per hr
+constexpr float KMPHTOMPH = 0.6213712;
+
 // set up a 45-second watchdog timer to restart if error or lost connection
-#define WDT_TIMEOUT 45000
+constexpr unsigned long WDT_TIMEOUT = 45000;
 
 #define LEDPIN 12
 
@@ -69,15 +72,16 @@ unsigned long restartESP;
 #define BUFSIZE3 121
 
 // Constants for battery voltage calculation
-#define VBATT_MIN 1945.0f  // ADC value for 3.6V
-#define VBATT_RANGE 616.7f // ADC value range for 3.6V to 4.2V
-#define VBATT_MIN_VOLTAGE 3.6f
+constexpr float VBATT_MIN = 1945.0;  // ADC value for 3.6V
+constexpr float  VBATT_RANGE = 616.7; // ADC value range for 3.6V to 4.2V
+constexpr float  VBATT_MIN_VOLTAGE = 3.6;
 
 // Timeout constants
-#define SERIAL_TIMEOUT 2000
-#define MQTT_PUBLISH_INTERVAL 29000
-#define CONNECTION_CHECK_INTERVAL 23000
-#define RECONNECT_TIMEOUT 60000
+constexpr unsigned long  SERIAL_TIMEOUT = 2000;
+constexpr unsigned long  MQTT_PUBLISH_INTERVAL = 19000;
+constexpr unsigned long  CONNECTION_CHECK_INTERVAL = 89000;
+constexpr unsigned long  BATTERY_CHECK_INTERVAL = 180000;
+constexpr unsigned long  RECONNECT_TIMEOUT = 60000;
 
 // MQTT details
 // Sign up for a free Adafruit IO account.
@@ -102,7 +106,7 @@ bool restarting = false;
 TinyGsm modem(Serial1);
 TinyGsmClient client(modem);
 
-unsigned long t_zero, t_one;
+unsigned long t_zero, t_one, t_two;
 
 // This function waits for a response from the SIM7000 of either "OK" or "ERROR".
 // The SIM7000 uses a \r\n line terminator, so handle the \r
@@ -138,8 +142,8 @@ bool waitForPromptOrError(unsigned long waitTime) {
     //Serial.println("String received in waitForPromptOrError = " + str);
     //Serial.println("Response wait time = " + String(millis() - t_0));
 
-    if (str == "> ") { return true; }
-    if (str == "ERROR\r") { return false; }
+    if ( str.indexOf("> ")!= -1 ) { return true; }
+    if ( str.indexOf("ERROR") != -1 ) { return false; }
   }
   return false;
 }
@@ -188,8 +192,8 @@ char* getResponse(uint8_t tokenNr, char* delimiters, bool skipCmd, unsigned long
   return staticTok;
 }
 
-// When the SIM7000 first comes out of reset, it spits out what may
-// be some Chinese characters before it starts responding to AT commands
+// When the SIM7000 first comes out of reset, it spits out some status reports
+// and what may be some Chinese characters before it starts responding to AT commands
 // with an "OK" response.  This function waits for the "OK".
 bool areWeAwakeYet() {
   // Send the modem "AT".  Read the string from the SIM7000.  If it contains "OK",
@@ -202,11 +206,9 @@ bool areWeAwakeYet() {
     Serial1.println("AT");
     while (Serial1.available() == 0) {}  //wait for data available
     String response = Serial1.readString();
+    Serial.println(response);
 
-    char resp[BUFSIZE1] = "";
-    response.toCharArray(resp, BUFSIZE1);
-
-    if (strstr(resp, "OK") != NULL) {
+    if ( response.indexOf("OK") != -1 ) {
       return true;
     }
   }
@@ -360,10 +362,19 @@ bool updateParameter() {
   //Serial1.readStringUntil('\n');
   Serial.println("Getting GPS data...");
   if (modem.getGPS(&latitude, &longitude, &speed, &altitude)) {
-    Serial.println("GPS data acquired");
+    Serial.println("GPS data acquired...");
   } else {
     Serial.println("Failed to get GPS data");
     errorCount++;
+    // Don't publish anything but don't restart yet either
+    return true;
+  }
+
+  if ( (latitude == 0.0) && (longitude == 0.0) ) {
+    Serial.println("But the latitude and longitude values aren't valid :-(");
+    errorCount++;
+    // Don't publish anything but don't restart yet either
+    return true;
   }
 
   // Get RSSNR
@@ -384,7 +395,7 @@ bool updateParameter() {
   char buf2[BUFSIZE2] = "";
   int size2 = snprintf(buf2, BUFSIZE2, "%d,%2.6f,%3.6f,%4.1f", rssnr, latitude, longitude, altitude);
   strncpy(buf1, "", sizeof(buf1));
-  snprintf(buf1, BUFSIZE1, "AT+SMPUB=\"cf20855/feeds/%s/csv\",\"%d\",1,1", mqttFeed1, size2);
+  snprintf(buf1, BUFSIZE1, "AT+SMPUB=\"%s/feeds/%s/csv\",\"%d\",1,1", mqttUser, mqttFeed1, size2);
 
   // Send MQTT publish
   Serial1.flush();
@@ -392,7 +403,9 @@ bool updateParameter() {
   Serial.println(buf1);
   if (!waitForPromptOrError(5000)) {
     Serial.println("Error publishing first line of " + String(mqttFeed1));
-  } else {
+    errorCount++;
+  } 
+  else {
     Serial1.flush();
     Serial1.println(buf2);
     Serial.println(buf2);
@@ -406,10 +419,11 @@ bool updateParameter() {
   delay(1000);
 
   // Prepare MQTT publish content for speed
+  speed = speed * KMPHTOMPH;
   strcpy(buf2, "");
   size2 = snprintf(buf2, BUFSIZE2, "%3.2f,%2.6f,%3.6f,%4.1f", speed, latitude, longitude, altitude);
   strncpy(buf1, "", sizeof(buf1));
-  snprintf(buf1, BUFSIZE1, "AT+SMPUB=\"cf20855/feeds/%s/csv\",\"%d\",1,1", mqttFeed2, size2);
+  snprintf(buf1, BUFSIZE1, "AT+SMPUB=\"%s/feeds/%s/csv\",\"%d\",1,1", mqttUser, mqttFeed2, size2);
 
   // Send MQTT publish
   Serial1.flush();
@@ -417,7 +431,9 @@ bool updateParameter() {
   Serial.println(buf1);
   if (!waitForPromptOrError(5000)) {
     Serial.println("Error publishing first line of  " + String(mqttFeed2));
-  } else {
+    errorCount++;
+  } 
+  else {
     Serial1.flush();
     Serial1.println(buf2);
     Serial.println(buf2);
@@ -426,11 +442,6 @@ bool updateParameter() {
   if (!waitForOKorError(5000)) {
     Serial.println("Error publishing  " + String(mqttFeed2));
     errorCount++;
-  }
-
-  if (errorCount > 2) {
-    Serial.println("Errors detected when publishing data, waiting for watchdog timeout");
-    //while (1) {}
   }
 
   delay(1000);
@@ -442,7 +453,7 @@ bool updateParameter() {
   strcpy(buf2, "");
   size2 = snprintf(buf2, BUFSIZE2, "%1.2f,%2.6f,%3.6f,%4.1f", vBattF, latitude, longitude, altitude);
   strncpy(buf1, "", sizeof(buf1));
-  snprintf(buf1, BUFSIZE1, "AT+SMPUB=\"cf20855/feeds/%s/csv\",\"%d\",1,1", mqttFeed3, size2);
+  snprintf(buf1, BUFSIZE1, "AT+SMPUB=\"%s/feeds/%s/csv\",\"%d\",1,1", mqttUser, mqttFeed3, size2);
 
   // Send MQTT publish
   Serial1.flush();
@@ -450,7 +461,9 @@ bool updateParameter() {
   Serial.println(buf1);
   if (!waitForPromptOrError(5000)) {
     Serial.println("Error publishing first line of  " + String(mqttFeed3));
-  } else {
+    errorCount++;
+  } 
+  else {
     Serial1.flush();
     Serial1.println(buf2);
     Serial.println(buf2);
@@ -462,7 +475,7 @@ bool updateParameter() {
   }
 
   if (errorCount > 2) {
-    Serial.println("Errors detected when publishing data, waiting for watchdog timeout");
+    Serial.println("Errors detected when publishing data, will be attempting to reconnect to MQTT...");
     return false;
   }
 
@@ -518,13 +531,24 @@ bool attemptReconnect(unsigned long timeout_ms) {
 
 void restartBoard(void) {
   Serial.println("Attempting to restart SIM7000 and ESP32");
-  pinMode(PWR_PIN, OUTPUT);
-  digitalWrite(PWR_PIN, LOW);
-  delay(1500);
-  digitalWrite(PWR_PIN, HIGH);
-  // According to the datasheet the SIM7000 takes 6.9 seconds to become inactive after powerdow
-  delay(7500);
+
+  // first power down the SIM7000G
+  Serial1.println("AT+CPOWD=1");
+
+  // Now restart the ESP32
   ESP.restart();
+  // The SIM7000 will be powered up in setup()
+}
+
+void powerDownBoard(void) {
+  #define WAKEUP_PIN GPIO_NUM_34
+  // first power down the SIM7000G
+  Serial1.println("AT+CPOWD=1");
+
+  // Now put the ESP32 in Deep Sleep
+  esp_sleep_enable_ext0_wakeup(WAKEUP_PIN, 1);  // Wake up on rising edge
+  // Start deep sleep
+  esp_deep_sleep_start();
 }
 
 void setup() {
@@ -533,6 +557,7 @@ void setup() {
 
   Serial.begin(115200);
   Serial1.begin(115200, SERIAL_8N1, PIN_RX, PIN_TX);
+  delay(2000); // Allow time for serial monitor connection
 
   Serial.println("ESP32 is awake.");
 
@@ -542,9 +567,10 @@ void setup() {
   Serial.println("Powering up SIM7000...");
   pinMode(PWR_PIN, OUTPUT);
   digitalWrite(PWR_PIN, HIGH);
-  delay(2500);
+  delay(1250);
+  // The SIM7000 needs the PWRKEY pin to be pulsed low for at least 1 s
   digitalWrite(PWR_PIN, LOW);
-  delay(1200);
+  delay(1250);
   digitalWrite(PWR_PIN, HIGH);
   // According to the datasheet the SIM7000 takes 4.5 seconds to become active after powerup
   delay(5000);
@@ -565,6 +591,7 @@ void setup() {
 
   t_zero = millis();
   t_one = millis();
+  t_two = millis();
 
   digitalWrite(LEDPIN, HIGH);
 }
@@ -580,7 +607,7 @@ void loop() {
   //   Serial.write(Serial1.read());   // read it and send it out Serial (USB)
   // }
 
-  // Check the connection status every 23 seconds
+  // Check the connection status every CONNECTION_CHECK_INTERVAL seconds
   if (millis() > t_zero + CONNECTION_CHECK_INTERVAL) {
     t_zero = millis();
     // Check the MQTT connection status
@@ -602,7 +629,7 @@ void loop() {
     }
   }
 
-  // Send a report every 29 seconds (I like prime numbers)
+  // Send a report every MQTT_PUBLISH_INTERVAL seconds (I like prime numbers)
   if (millis() > t_one + MQTT_PUBLISH_INTERVAL) {
     t_one = millis();
     digitalWrite(LEDPIN, LOW);
@@ -614,5 +641,18 @@ void loop() {
 
     //Serial.println(String(analogRead(35)));  // battery voltage
     digitalWrite(LEDPIN, HIGH);
+  }
+
+  // On USB, battery voltage typically reads 0.45V; on battery, reads actual voltage
+  // If the battery voltage drops below 3.0 VDC, shut down the board to
+  // prevent battery undervoltage, which can damage the battery
+  float batteryVoltage = 0.0;
+  if (millis() > t_two + BATTERY_CHECK_INTERVAL) {
+    t_two = millis();
+    batteryVoltage = readBatteryVoltage();
+    if ( (batteryVoltage > 1.0) && (batteryVoltage < VBATT_MIN_VOLTAGE) ) {
+      Serial.println("Powering down board, battery voltage = " + String(batteryVoltage) );
+      powerDownBoard();
+    }
   }
 }
